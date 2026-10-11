@@ -33,9 +33,11 @@ app = Flask(__name__)
 # Database configuration
 database_url = os.getenv("DATABASE_URL") or os.getenv("MYSQL_URL")
 if database_url:
-    # Render and some cloud providers provide mysql:// which requires pymysql dialect
+    # Convert cloud prefixes for SQLAlchemy compatibility
     if database_url.startswith("mysql://"):
         database_url = database_url.replace("mysql://", "mysql+pymysql://", 1)
+    elif database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
 else:
     mysql_user = os.getenv("MYSQL_USER")
     mysql_password = os.getenv("MYSQL_PASSWORD")
