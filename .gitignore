@@ -1,0 +1,16 @@
+server/.env
+server/__pycache__/
+.python/
+*.sqlite3
+*.log
+frontend/node_modules/
+frontend/dist/
+backend/target/
+backend/bin/
+backend/.classpath
+backend/.project
+backend/.settings/
+client/
+.env
+.env.*
+!.env.example
