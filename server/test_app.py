@@ -187,6 +187,11 @@ class HouseHuntTestCase(unittest.TestCase):
         self.assertEqual(res_upd.status_code, 200)
         self.assertEqual(res_upd.get_json()["status"], "Contacted")
 
+        # Property owner view received inquiries
+        res_rec = self.client.get("/api/inquiries/received", headers=admin_headers)
+        self.assertEqual(res_rec.status_code, 200)
+        self.assertTrue(any(i["id"] == inq_id for i in res_rec.get_json()))
+
     def test_08_admin_authorization_protection(self):
         # Login regular user
         user_login = self.client.post("/api/auth/login", json={"email": "john@example.com", "password": "Password@123"})

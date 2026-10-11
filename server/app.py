@@ -31,8 +31,12 @@ load_dotenv()
 app = Flask(__name__)
 
 # Database configuration
-database_url = os.getenv("DATABASE_URL")
-if not database_url:
+database_url = os.getenv("DATABASE_URL") or os.getenv("MYSQL_URL")
+if database_url:
+    # Render and some cloud providers provide mysql:// which requires pymysql dialect
+    if database_url.startswith("mysql://"):
+        database_url = database_url.replace("mysql://", "mysql+pymysql://", 1)
+else:
     mysql_user = os.getenv("MYSQL_USER")
     mysql_password = os.getenv("MYSQL_PASSWORD")
     mysql_host = os.getenv("MYSQL_HOST", "127.0.0.1")
@@ -44,7 +48,9 @@ if not database_url:
 
 jwt_secret = os.getenv("JWT_SECRET")
 if not jwt_secret:
-    raise RuntimeError("JWT_SECRET must be configured")
+    if os.getenv("FLASK_ENV") == "production":
+        raise RuntimeError("JWT_SECRET must be configured in production")
+    jwt_secret = "househunt-dev-jwt-secret-replace-with-32chars-in-production"
 
 app.config.update(
     SQLALCHEMY_DATABASE_URI=database_url,
@@ -58,8 +64,13 @@ app.config.update(
 
 db = SQLAlchemy(app)
 
-# CORS configuration
-origins = [x.strip() for x in os.getenv("FRONTEND_ORIGIN", "http://127.0.0.1:5173,http://localhost:5173").split(",") if x.strip()]
+# CORS configuration: allow Vercel production domains, previews, and localhost
+frontend_origin_env = os.getenv("FRONTEND_ORIGIN", "*").strip()
+if not frontend_origin_env or frontend_origin_env == "*":
+    origins = "*"
+else:
+    origins = [x.strip() for x in frontend_origin_env.split(",") if x.strip()]
+
 CORS(app, resources={r"/api/*": {"origins": origins}}, supports_credentials=False)
 
 
@@ -649,6 +660,35 @@ def my_inquiries():
     return jsonify([inquiry_json(i) for i in inqs])
 
 
+@app.get("/api/inquiries/received")
+@auth_required
+def inquiries_received():
+    my_props = Property.query.filter_by(owner_id=g.user.id).all()
+    my_prop_ids = [p.id for p in my_props]
+    if not my_prop_ids:
+        return jsonify([])
+    inqs = Inquiry.query.filter(Inquiry.property_id.in_(my_prop_ids)).order_by(Inquiry.created_at.desc()).all()
+    return jsonify([inquiry_json(i) for i in inqs])
+
+
+@app.put("/api/inquiries/<int:inquiry_id>/status")
+@auth_required
+def update_inquiry_status(inquiry_id):
+    i = db.session.get(Inquiry, inquiry_id)
+    if not i:
+        return error("Inquiry not found", 404)
+    if g.user.role != "admin":
+        if not i.property or i.property.owner_id != g.user.id:
+            return error("Unauthorized", 403)
+    data = request.get_json(silent=True) or {}
+    status = data.get("status")
+    if status not in ("Pending", "Contacted", "Closed"):
+        return error("Invalid inquiry status")
+    i.status = status
+    db.session.commit()
+    return jsonify(inquiry_json(i))
+
+
 # ==============================================================================
 # Bookings Endpoints
 # ==============================================================================
@@ -1024,10 +1064,17 @@ def initialize():
         db.session.commit()
 
 
-if __name__ == "__main__":
-    with app.app_context():
+# Synchronize schema and seed admin on WSGI startup or direct run
+with app.app_context():
+    try:
         initialize()
-    port = int(os.getenv("FLASK_PORT", os.getenv("PORT", "8081")))
+    except Exception as exc:
+        app.logger.warning("Database initialization notice on startup: %s", exc)
+
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", os.getenv("FLASK_PORT", "8081")))
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
     print(f"Starting House Hunt Flask server on port {port}...")
     app.run(host="0.0.0.0", port=port, debug=debug)
+

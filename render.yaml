@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: househunt-api
+    env: python
+    rootDir: server
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 2 --threads 4 app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: FRONTEND_ORIGIN
+        value: "*"
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        value: admin@househunt.com
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SEED_DATA
+        value: "1"
